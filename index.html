@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CABEÇA DE JEGE</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+    <style>
+        :root {
+            --primary: #ffcc00; --secondary: #333; --danger: #ff4444;
+            --success: #00c851; --bg: #1a472a; --card-bg: #2a2a2a;
+        }
+        body { margin: 0; font-family: 'Arial Black', sans-serif; background: var(--bg); color: white; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+        .screen { display: none; flex-direction: column; align-items: center; width: 95%; max-width: 650px; background: var(--card-bg); padding: 20px; border-radius: 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); text-align: center; max-height: 95vh; overflow-y: auto; }
+        .active { display: flex; }
+        
+        /* LOBBY */
+        .player-entry { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 15px; margin-bottom: 8px; width: 90%; border: 1px solid #444; }
+        .btn-kick { background: var(--danger); color: white; padding: 5px 10px; font-size: 0.7rem; width: auto; border-radius: 8px; cursor: pointer; border: none; }
+
+        /* JOGO */
+        .feno-area { background: url('feno.png') center/cover !important; padding: 15px; border-radius: 20px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 10px 0; border: 4px solid #5d4037; min-height: 75px; }
+        .dado-feno { width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: bold; border: 2px solid #000; color: white; text-shadow: 1px 1px 2px #000; }
+        .reveal-area { display: flex; gap: 10px; justify-content: center; margin: 10px 0; min-height: 130px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 15px; width: 100%; overflow-x: auto; }
+        .played-card { width: 80px; height: 120px; border-radius: 8px; border: 2px solid var(--primary); background-size: cover; flex-shrink: 0; }
+        
+        .hand { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
+        .card-wrapper { position: relative; }
+        .card-img { width: 85px; height: 125px; border-radius: 8px; border: 3px solid white; cursor: pointer; background-size: cover; background-position: center; }
+        .card-img.selected { transform: translateY(-15px); border-color: var(--primary); }
+        .card-value-badge { position: absolute; top: -10px; right: -10px; background: var(--danger); color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; border: 2px solid white; font-weight: bold; z-index: 10; }
+        
+        .info-bar { display: flex; align-items: center; gap: 15px; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 50px; margin-bottom: 10px; }
+        .pile-stack { width: 40px; height: 60px; background: url('verso.png') center/cover; border: 2px solid white; border-radius: 4px; }
+        
+        /* BURRÃO NO CANTO INFERIOR ESQUERDO */
+        #burrao-visual { 
+            position: fixed; 
+            bottom: 20px; 
+            left: 20px; 
+            width: 85px; 
+            height: 120px; 
+            background: url('burrão.png') center/cover; 
+            border: 3px solid var(--danger); 
+            border-radius: 10px; 
+            display: none; 
+            z-index: 100;
+            box-shadow: 0 0 15px rgba(255,0,0,0.6);
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        #turn-banner { width: 100%; padding: 8px; border-radius: 10px; margin-bottom: 10px; font-weight: bold; color: #000; background: var(--primary); font-size: 0.8rem; }
+        button { padding: 12px; font-weight: bold; cursor: pointer; border: none; border-radius: 12px; text-transform: uppercase; background: var(--primary); color: #000; width: 100%; }
+        .btn-dice-opt { font-size: 1.2rem; margin: 3px; border-radius: 5px; width: 45px; height: 45px; border: 1px solid #000; cursor: pointer; font-weight: bold; }
+        input { padding: 12px; margin: 10px 0; border-radius: 12px; border: 2px solid #444; background: #111; color: white; width: 80%; text-align: center; font-size: 1.2rem; }
+        
+        @keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <!-- EFEITOS SONOROS (Arquivos na sua pasta local) -->
+    <audio id="snd-dice" src="rodar_dados.mp3"></audio>
+    <audio id="snd-card" src="pegar_carta.mp3"></audio>
+    <audio id="snd-burro" src="burro.mp3"></audio>
+
+    <div id="screen-menu" class="screen active">
+        <h1>CABEÇA DE JEGE</h1>
+        <button onclick="goTo('screen-create')">CRIAR SALA</button>
+        <button style="margin-top:10px" onclick="goTo('screen-join')">ENTRAR NA SALA</button>
+    </div>
+
+    <div id="screen-create" class="screen">
+        <h2>NOVA SALA</h2>
+        <input type="text" id="create-nick" placeholder="Seu Apelido">
+        <button onclick="logicCreateRoom()">GERAR</button>
+        <button style="background:none; color:white; margin-top:5px;" onclick="goTo('screen-menu')">VOLTAR</button>
+    </div>
+
+    <div id="screen-join" class="screen">
+        <h2>ENTRAR</h2>
+        <input type="text" id="join-nick" placeholder="Seu Apelido">
+        <input type="number" id="join-code" placeholder="Código (4 números)">
+        <button onclick="logicJoinRoom()">ENTRAR</button>
+        <button style="background:none; color:white; margin-top:5px;" onclick="goTo('screen-menu')">VOLTAR</button>
+    </div>
+
+    <div id="screen-lobby" class="screen">
+        <h2>LOBBY</h2>
+        <p>CÓDIGO: <b id="lobby-room-code" style="color:var(--primary); font-size: 2.5rem;">----</b></p>
+        <div id="player-list-lobby"></div>
+        <button id="start-btn" style="display:none" onclick="hostStart()">COMEÇAR JOGO</button>
+        <button style="background:#444; color:white; margin-top:10px" onclick="location.reload()">SAIR</button>
+    </div>
+
+    <div id="screen-game" class="screen">
+        <div id="turn-banner">CARREGANDO...</div>
+        <div class="info-bar">
+            <div class="pile-stack"></div>
+            <div>CARTAS: <b id="ui-pile">0</b></div>
+        </div>
+        <div id="reveal-label" style="font-size:0.7rem; margin-top:5px; display:none;">REVELADAS:</div>
+        <div class="reveal-area" id="reveal-area"></div>
+        
+        <!-- BURRÃO NO CANTO -->
+        <div id="burrao-visual"></div>
+
+        <div class="feno-area" id="dados-feno"></div>
+        <div id="area-dice-selection" style="display:none; margin-bottom:10px;">
+            <div id="dice-pool" style="display:flex; justify-content:center; gap:5px; flex-wrap:wrap;"></div>
+        </div>
+        <div class="hand" id="my-hand"></div>
+        <button id="btn-confirm" style="display:none; margin-top:15px;" onclick="playSelectedCards()">JOGAR SELECIONADAS</button>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyBxkvXpN8eoLhzEJaGr6o1JNgU8CpdPiWc",
+            authDomain: "esseemeuamigo-1f262.firebaseapp.com",
+            databaseURL: "https://esseemeuamigo-1f262-default-rtdb.firebaseio.com",
+            projectId: "esseemeuamigo-1f262",
+            storageBucket: "esseemeuamigo-1f262.firebasestorage.app",
+            messagingSenderId: "611527572474",
+            appId: "1:611527572474:web:5c5182a8a68a84d2f7c243",
+            measurementId: "G-N488ZBCJ9R"
+        };
+        
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        let myData = { nick: '', roomCode: '', isOwner: false };
+        let selectedCards = [];
+
+        const CORES = ['amarelo', 'azul', 'azulescuro', 'laranja', 'roxo', 'verde'];
+        const CORES_HEX = { laranja: '#ff9800', verde: '#4caf50', roxo: '#9c27b0', azul: '#2196f3', amarelo: '#ffeb3b', azulescuro: '#0d47a1' };
+        const ARQUIVOS_DUPLOS = [
+            'amarelo_azulescuro', 'azul_amarelo', 'azul_azulescuro', 'laranja_amarelo',
+            'laranja_azul', 'laranja_azulescuro', 'laranja_roxo', 'laranja_verde',
+            'roxo_amarelo', 'roxo_azul', 'roxo_azulescuro', 'verde_amarelo',
+            'verde_azul', 'verde_azulescuro', 'verde_roxo'
+        ];
+
+        function playSound(id) {
+            const s = document.getElementById(id);
+            if(s) { s.currentTime = 0; s.play().catch(e => {}); }
+        }
+
+        function goTo(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        function logicCreateRoom() {
+            const nick = document.getElementById('create-nick').value.trim();
+            if(!nick) return alert("Nick!");
+            const code = Math.floor(1000 + Math.random() * 9000).toString();
+            myData = { nick, roomCode: code, isOwner: true };
+            db.ref('rooms/' + code).set({
+                status: 'waiting', owner: nick, players: [{nick, hand: [], pileCount: 10, isBurrão: false}],
+                feno: [], phase: 'choosing_dice', turnIdx: 0, diceAvailable: [...CORES], lastRevealed: [], rolledOptions: []
+            }).then(() => listenToRoom(code));
+        }
+
+        function logicJoinRoom() {
+            const nick = document.getElementById('join-nick').value.trim();
+            const code = document.getElementById('join-code').value.trim();
+            if(!nick || code.length !== 4) return alert("Nick e Código!");
+            db.ref('rooms/' + code).once('value', snap => {
+                const room = snap.val();
+                if(!room) return alert("Não encontrada!");
+                let players = room.players || [];
+                players.push({nick, hand: [], pileCount: 10, isBurrão: false});
+                db.ref('rooms/' + code + '/players').set(players).then(() => {
+                    myData = { nick, roomCode: code, isOwner: false };
+                    listenToRoom(code);
+                });
+            });
+        }
+
+        function listenToRoom(code) {
+            goTo('screen-lobby');
+            document.getElementById('lobby-room-code').innerText = code;
+            db.ref('rooms/' + code).on('value', snap => {
+                const room = snap.val();
+                if(!room) return location.reload();
+                const imIn = room.players.find(p => p.nick === myData.nick);
+                if(!imIn) return location.reload();
+                if(myData.isOwner) document.getElementById('start-btn').style.display = 'block';
+                updateUI(room);
+            });
+        }
+
+        function kickPlayer(targetNick) {
+            db.ref('rooms/' + myData.roomCode).once('value', snap => {
+                let room = snap.val();
+                room.players = room.players.filter(p => p.nick !== targetNick);
+                db.ref('rooms/' + myData.roomCode).set(room);
+            });
+        }
+
+        function getCardValue(card, feno) {
+            if (!feno || feno.length === 0) return "?";
+            if (card.type === 'zangado') { const d = feno.find(f => f.cor === card.cor); return d ? d.valor : 0; }
+            else { const d1 = feno.find(f => f.cor === card.cor1); const d2 = feno.find(f => f.cor === card.cor2); return (d1 ? d1.valor : 0) + (d2 ? d2.valor : 0); }
+        }
+
+        function updateUI(room) {
+            if(room.status === 'waiting') {
+                document.getElementById('player-list-lobby').innerHTML = room.players.map(p => `
+                    <div class="player-entry">
+                        <span>• ${p.nick} ${p.nick === room.owner ? '(DONO)' : ''}</span>
+                        ${myData.isOwner && p.nick !== myData.nick ? `<button class="btn-kick" onclick="kickPlayer('${p.nick}')">EXPULSAR</button>` : ''}
+                    </div>`).join('');
+            } 
+            if(room.status === 'playing') {
+                if(!document.getElementById('screen-game').classList.contains('active')) goTo('screen-game');
+                const me = room.players.find(p => p.nick === myData.nick);
+                const isMyTurn = room.players[room.turnIdx].nick === myData.nick;
+
+                document.getElementById('ui-pile').innerText = me.pileCount;
+                document.getElementById('burrao-visual').style.display = me.isBurrão ? 'block' : 'none';
+
+                if (room.lastRevealed && room.lastRevealed.length > 0) {
+                    document.getElementById('reveal-label').style.display = 'block';
+                    document.getElementById('reveal-area').innerHTML = room.lastRevealed.map(c => `<div class="played-card" style="background-image: url('${c.img}')"></div>`).join('');
+                }
+
+                document.getElementById('dados-feno').innerHTML = (room.feno || []).map(d => `<div class="dado-feno" style="background:${CORES_HEX[d.cor]}">${d.valor}</div>`).join('');
+
+                document.getElementById('my-hand').innerHTML = (me.hand || []).map((card, i) => `
+                    <div class="card-wrapper">
+                        <div class="card-img ${selectedCards.includes(i) ? 'selected' : ''}" style="background-image: url('${card.img}')" onclick="toggleCard(${i})"></div>
+                        ${room.feno && room.feno.length > 0 ? `<div class="card-value-badge">${getCardValue(card, room.feno)}</div>` : ''}
+                    </div>`).join('');
+
+                if(room.phase === 'choosing_dice') {
+                    document.getElementById('turn-banner').innerText = isMyTurn ? "SUA VEZ: ESCOLHA UM DADO" : `AGUARDANDO: ${room.players[room.turnIdx].nick.toUpperCase()}`;
+                    document.getElementById('btn-confirm').style.display = 'none';
+                    if(isMyTurn) {
+                        document.getElementById('area-dice-selection').style.display = 'block';
+                        if(!room.rolledOptions || room.rolledOptions.length === 0) { playSound('snd-dice'); autoRollDice(room); }
+                        else { renderDiceSelection(room); }
+                    } else { document.getElementById('area-dice-selection').style.display = 'none'; }
+                } else {
+                    document.getElementById('turn-banner').innerText = "FASE DE CARTAS (1-3)";
+                    document.getElementById('area-dice-selection').style.display = 'none';
+                    document.getElementById('btn-confirm').style.display = 'block';
+                }
+            }
+        }
+
+        function autoRollDice(room) {
+            const options = room.diceAvailable.map(cor => ({ cor, valor: Math.floor(Math.random() * 6) + 1 }));
+            db.ref('rooms/' + myData.roomCode + '/rolledOptions').set(options);
+        }
+
+        function renderDiceSelection(room) {
+            const container = document.getElementById('dice-pool');
+            const fenoVals = (room.feno || []).map(f => f.valor);
+            container.innerHTML = room.rolledOptions.map((d, i) => {
+                const pode = !fenoVals.includes(d.valor) || room.rolledOptions.every(rd => fenoVals.includes(rd.valor));
+                return `<button class="btn-dice-opt" style="background:${CORES_HEX[d.cor]}; opacity:${pode?1:0.3}" ${pode ? `onclick="selectDice(${i})"` : 'disabled'}>${d.valor}</button>`;
+            }).join('');
+        }
+
+        function selectDice(idx) {
+            playSound('snd-card');
+            db.ref('rooms/' + myData.roomCode).once('value', snap => {
+                let room = snap.val();
+                const d = room.rolledOptions[idx];
+                if(!room.feno) room.feno = [];
+                room.feno.push(d);
+                room.diceAvailable = room.diceAvailable.filter(c => c !== d.cor);
+                room.rolledOptions = [];
+                if(room.feno.length === 6) room.phase = 'playing_cards';
+                else room.turnIdx = (room.turnIdx + 1) % room.players.length;
+                db.ref('rooms/' + myData.roomCode).set(room);
+            });
+        }
+
+        function toggleCard(i) {
+            playSound('snd-card');
+            const idx = selectedCards.indexOf(i);
+            if(idx > -1) selectedCards.splice(idx, 1);
+            else if(selectedCards.length < 3) selectedCards.push(i);
+            updateUI_local();
+        }
+
+        function updateUI_local() {
+            document.querySelectorAll('.card-img').forEach((el, index) => el.classList.toggle('selected', selectedCards.includes(index)));
+        }
+
+        function playSelectedCards() {
+            if(selectedCards.length === 0) return;
+            playSound('snd-card');
+            db.ref('rooms/' + myData.roomCode).once('value', snap => {
+                let room = snap.val();
+                const meIdx = room.players.findIndex(p => p.nick === myData.nick);
+                const jogadas = selectedCards.map(i => room.players[meIdx].hand[i]);
+                if(!room.pendingPlays) room.pendingPlays = {};
+                room.pendingPlays[myData.nick] = jogadas;
+                room.players[meIdx].hand = room.players[meIdx].hand.filter((_, i) => !selectedCards.includes(i));
+                selectedCards = [];
+                if(Object.keys(room.pendingPlays).length === room.players.length) resolveRound(room);
+                else db.ref('rooms/' + myData.roomCode).set(room);
+            });
+        }
+
+        function resolveRound(room) {
+            room.lastRevealed = Object.values(room.pendingPlays).flat();
+            room.lastRevealed.forEach(c => { if(c.type === 'zangado') { let d = room.feno.find(f => f.cor === c.cor); if(d) d.valor = 7 - d.valor; } });
+            
+            let maxV = -1; let ganhador = "";
+            room.players.forEach(p => { room.pendingPlays[p.nick].forEach(c => {
+                let v = getCardValue(c, room.feno);
+                if(v > maxV) { maxV = v; ganhador = p.nick; }
+                else if(v === maxV && ganhador !== "") { if(p.pileCount < room.players.find(pl => pl.nick === ganhador).pileCount) ganhador = p.nick; }
+            }); });
+
+            // SOM DO BURRO APENAS PARA QUEM PERDEU
+            if(ganhador === myData.nick) playSound('snd-burro');
+
+            room.players.forEach(p => {
+                p.isBurrão = (p.nick === ganhador);
+                while(p.hand.length < 3) {
+                    if(!p.isBurrão && p.pileCount > 0) { p.hand.push(getRandCard()); p.pileCount--; }
+                    else { p.hand.push(getRandCard()); if(p.isBurrão) break; }
+                }
+            });
+            room.feno = []; room.diceAvailable = [...CORES]; room.phase = 'choosing_dice'; room.pendingPlays = null;
+            room.turnIdx = room.players.findIndex(p => p.isBurrão);
+            if(room.turnIdx === -1) room.turnIdx = 0;
+            db.ref('rooms/' + myData.roomCode).set(room);
+        }
+
+        function getRandCard() {
+            if(Math.random() > 0.85) { const c = CORES[Math.floor(Math.random()*CORES.length)]; return {type: 'zangado', cor: c, img: `${c}.png`}; }
+            else { const nome = ARQUIVOS_DUPLOS[Math.floor(Math.random()*ARQUIVOS_DUPLOS.length)]; const cores = nome.split('_'); return {type: 'duplo', cor1: cores[0], cor2: cores[1], img: `${nome}.png`}; }
+        }
+
+        function hostStart() {
+            db.ref('rooms/' + myData.roomCode).once('value', snap => {
+                let room = snap.val();
+                room.status = 'playing';
+                room.players.forEach(p => { p.pileCount = 10 - 3; p.hand = [getRandCard(), getRandCard(), getRandCard()]; });
+                db.ref('rooms/' + myData.roomCode).set(room);
+            });
+        }
+    </script>
+</body>
+</html>
