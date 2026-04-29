@@ -15,11 +15,9 @@
         .screen { display: none; flex-direction: column; align-items: center; width: 95%; max-width: 650px; background: var(--card-bg); padding: 20px; border-radius: 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); text-align: center; max-height: 95vh; overflow-y: auto; }
         .active { display: flex; }
         
-        /* LOBBY */
         .player-entry { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 15px; margin-bottom: 8px; width: 90%; border: 1px solid #444; }
         .btn-kick { background: var(--danger); color: white; padding: 5px 10px; font-size: 0.7rem; width: auto; border-radius: 8px; cursor: pointer; border: none; }
 
-        /* JOGO */
         .feno-area { background: url('feno.png') center/cover !important; padding: 15px; border-radius: 20px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 10px 0; border: 4px solid #5d4037; min-height: 75px; }
         .dado-feno { width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: bold; border: 2px solid #000; color: white; text-shadow: 1px 1px 2px #000; }
         
@@ -43,6 +41,8 @@
         input { padding: 12px; margin: 10px 0; border-radius: 12px; border: 2px solid #444; background: #111; color: white; width: 80%; text-align: center; font-size: 1.2rem; }
         
         .last-feno-container { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; opacity: 0.7; transform: scale(0.8); }
+
+        #win-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 200; flex-direction: column; justify-content: center; align-items: center; color: var(--primary); }
     </style>
 </head>
 <body>
@@ -50,6 +50,12 @@
     <audio id="snd-dice" src="rodar_dados.mp3"></audio>
     <audio id="snd-card" src="pegar_carta.mp3"></audio>
     <audio id="snd-burro" src="burro.mp3"></audio>
+
+    <div id="win-overlay">
+        <h1>VOCÊ VENCEU!</h1>
+        <p>Você se livrou de todas as cartas.</p>
+        <button onclick="document.getElementById('win-overlay').style.display='none'" style="width: auto; padding: 10px 20px;">ASSISTIR</button>
+    </div>
 
     <div id="screen-menu" class="screen active">
         <h1>CABEÇA DE JEGE</h1>
@@ -75,7 +81,7 @@
     <div id="screen-lobby" class="screen">
         <h2>LOBBY</h2>
         <p>CÓDIGO: <b id="lobby-room-code" style="color:var(--primary); font-size: 2.5rem;">----</b></p>
-        <div id="player-list-lobby" style="width: 100%;"></div>
+        <div id="player-list-lobby"></div>
         <button id="start-btn" style="display:none" onclick="hostStart()">COMEÇAR JOGO</button>
         <button style="background:#444; color:white; margin-top:10px" onclick="location.reload()">SAIR</button>
     </div>
@@ -87,7 +93,6 @@
             <div>CARTAS: <b id="ui-pile">0</b></div>
         </div>
 
-        <!-- HISTÓRICO DA RODADA ANTERIOR -->
         <div id="history-box" style="display:none; width: 100%;">
             <div style="font-size:0.6rem; margin-bottom:2px;">DADOS DA PARTIDA ANTERIOR:</div>
             <div class="last-feno-container" id="last-feno-display"></div>
@@ -96,13 +101,18 @@
         </div>
         
         <div id="burrao-visual"></div>
-
         <div class="feno-area" id="dados-feno"></div>
+
         <div id="area-dice-selection" style="display:none; margin-bottom:10px;">
             <div id="dice-pool" style="display:flex; justify-content:center; gap:5px; flex-wrap:wrap;"></div>
         </div>
-        <div class="hand" id="my-hand"></div>
-        <button id="btn-confirm" style="display:none; margin-top:15px;" onclick="playSelectedCards()">JOGAR SELECIONADAS</button>
+
+        <div id="player-actions">
+            <div class="hand" id="my-hand"></div>
+            <button id="btn-confirm" style="display:none; margin-top:15px;" onclick="playSelectedCards()">JOGAR SELECIONADAS</button>
+        </div>
+
+        <div id="spectator-msg" style="display:none; color:var(--success); margin: 20px 0;">VOCÊ ESTÁ ASSISTINDO...</div>
     </div>
 
     <script>
@@ -121,9 +131,12 @@
         const db = firebase.database();
         let myData = { nick: '', roomCode: '', isOwner: false };
         let selectedCards = [];
+        let wonAnnounced = false;
 
         const CORES = ['amarelo', 'azul', 'azulescuro', 'laranja', 'roxo', 'verde'];
-        const CORES_HEX = { laranja: '#ff9800', verde: '#4caf50', roxo: '#9c27b0', azul: '#2196f3', amarelo: '#ffeb3b', azulescuro: '#0d47a1' };
+        // ALTERAÇÃO DO AZUL PARA #00ffff (CIANO)
+        const CORES_HEX = { laranja: '#ff9800', verde: '#4caf50', roxo: '#9c27b0', azul: '#00ffff', amarelo: '#ffeb3b', azulescuro: '#0d47a1' };
+        
         const ARQUIVOS_DUPLOS = [
             'amarelo_azulescuro', 'azul_amarelo', 'azul_azulescuro', 'laranja_amarelo',
             'laranja_azul', 'laranja_azulescuro', 'laranja_roxo', 'laranja_verde',
@@ -131,15 +144,8 @@
             'verde_azul', 'verde_azulescuro', 'verde_roxo'
         ];
 
-        function playSound(id) {
-            const s = document.getElementById(id);
-            if(s) { s.currentTime = 0; s.play().catch(e => {}); }
-        }
-
-        function goTo(id) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-        }
+        function playSound(id) { const s = document.getElementById(id); if(s) { s.currentTime = 0; s.play().catch(e => {}); } }
+        function goTo(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
 
         function logicCreateRoom() {
             const nick = document.getElementById('create-nick').value.trim();
@@ -147,7 +153,7 @@
             const code = Math.floor(1000 + Math.random() * 9000).toString();
             myData = { nick, roomCode: code, isOwner: true };
             db.ref('rooms/' + code).set({
-                status: 'waiting', owner: nick, players: [{nick, hand: [], pileCount: 10, isBurrão: false}],
+                status: 'waiting', owner: nick, players: [{nick, hand: [], pileCount: 10, isBurrão: false, hasWon: false}],
                 feno: [], phase: 'choosing_dice', turnIdx: 0, diceAvailable: [...CORES], lastRevealed: [], rolledOptions: [], lastFeno: []
             }).then(() => listenToRoom(code));
         }
@@ -155,12 +161,12 @@
         function logicJoinRoom() {
             const nick = document.getElementById('join-nick').value.trim();
             const code = document.getElementById('join-code').value.trim();
-            if(!nick || code.length !== 4) return alert("Preencha tudo!");
+            if(!nick || code.length !== 4) return alert("Erro!");
             db.ref('rooms/' + code).once('value', snap => {
                 const room = snap.val();
-                if(!room) return alert("Sala não encontrada!");
+                if(!room) return alert("Sala não existe!");
                 let players = room.players || [];
-                players.push({nick, hand: [], pileCount: 10, isBurrão: false});
+                players.push({nick, hand: [], pileCount: 10, isBurrão: false, hasWon: false});
                 db.ref('rooms/' + code + '/players').set(players).then(() => {
                     myData = { nick, roomCode: code, isOwner: false };
                     listenToRoom(code);
@@ -197,6 +203,7 @@
 
         function updateUI(room) {
             if(room.status === 'waiting') {
+                wonAnnounced = false;
                 document.getElementById('player-list-lobby').innerHTML = room.players.map(p => `
                 <div class="player-entry"><span>• ${p.nick}</span> 
                 ${myData.isOwner && p.nick !== myData.nick ? `<button class="btn-kick" onclick="kickPlayer('${p.nick}')">KICK</button>` : ''}</div>`).join('');
@@ -206,10 +213,18 @@
                 const me = room.players.find(p => p.nick === myData.nick);
                 const isMyTurn = room.players[room.turnIdx].nick === myData.nick;
 
-                document.getElementById('ui-pile').innerText = (me.pileCount + me.hand.length);
+                if(me.hasWon) {
+                    if(!wonAnnounced) { document.getElementById('win-overlay').style.display = 'flex'; wonAnnounced = true; }
+                    document.getElementById('player-actions').style.display = 'none';
+                    document.getElementById('spectator-msg').style.display = 'block';
+                } else {
+                    document.getElementById('player-actions').style.display = 'block';
+                    document.getElementById('spectator-msg').style.display = 'none';
+                }
+
+                document.getElementById('ui-pile').innerText = (me.pileCount + (me.hand ? me.hand.length : 0));
                 document.getElementById('burrao-visual').style.display = me.isBurrão ? 'block' : 'none';
 
-                // HISTÓRICO DA RODADA ANTERIOR (Dados e Cartas)
                 if (room.lastRevealed && room.lastRevealed.length > 0) {
                     document.getElementById('history-box').style.display = 'block';
                     document.getElementById('last-feno-display').innerHTML = (room.lastFeno || []).map(d => 
@@ -222,11 +237,13 @@
 
                 document.getElementById('dados-feno').innerHTML = (room.feno || []).map(d => `<div class="dado-feno" style="background:${CORES_HEX[d.cor]}">${d.valor}</div>`).join('');
 
-                document.getElementById('my-hand').innerHTML = (me.hand || []).map((card, i) => `
-                    <div class="card-wrapper">
-                        <div class="card-img ${selectedCards.includes(i) ? 'selected' : ''}" style="background-image: url('${card.img}')" onclick="toggleCard(${i})"></div>
-                        ${room.feno && room.feno.length > 0 ? `<div class="card-value-badge">${getCardValue(card, room.feno)}</div>` : ''}
-                    </div>`).join('');
+                if(!me.hasWon) {
+                    document.getElementById('my-hand').innerHTML = (me.hand || []).map((card, i) => `
+                        <div class="card-wrapper">
+                            <div class="card-img ${selectedCards.includes(i) ? 'selected' : ''}" style="background-image: url('${card.img}')" onclick="toggleCard(${i})"></div>
+                            ${room.feno && room.feno.length > 0 ? `<div class="card-value-badge">${getCardValue(card, room.feno)}</div>` : ''}
+                        </div>`).join('');
+                }
 
                 if(room.phase === 'choosing_dice') {
                     document.getElementById('turn-banner').innerText = isMyTurn ? "SUA VEZ: ESCOLHA UM DADO" : `AGUARDANDO: ${room.players[room.turnIdx].nick.toUpperCase()}`;
@@ -237,15 +254,14 @@
                         else { renderDiceSelection(room); }
                     } else { document.getElementById('area-dice-selection').style.display = 'none'; }
                 } else {
-                    document.getElementById('turn-banner').innerText = "JOGUE DE 1 A 3 CARTAS";
+                    document.getElementById('turn-banner').innerText = me.hasWon ? "ASSISTINDO PARTIDA..." : "JOGUE DE 1 A 3 CARTAS";
                     document.getElementById('area-dice-selection').style.display = 'none';
-                    document.getElementById('btn-confirm').style.display = 'block';
+                    document.getElementById('btn-confirm').style.display = me.hasWon ? 'none' : 'block';
                 }
             }
         }
 
         function autoRollDice(room) {
-            // Dados agora podem repetir valores
             const options = room.diceAvailable.map(cor => ({ cor, valor: Math.floor(Math.random() * 6) + 1 }));
             db.ref('rooms/' + myData.roomCode + '/rolledOptions').set(options);
         }
@@ -265,8 +281,15 @@
                 room.feno.push(d);
                 room.diceAvailable = room.diceAvailable.filter(c => c !== d.cor);
                 room.rolledOptions = [];
-                if(room.feno.length === 6) room.phase = 'playing_cards';
-                else room.turnIdx = (room.turnIdx + 1) % room.players.length;
+                if(room.feno.length === 6) {
+                    room.phase = 'playing_cards';
+                    if(!room.pendingPlays) room.pendingPlays = {};
+                    room.players.forEach(p => { if(p.hasWon) room.pendingPlays[p.nick] = []; });
+                } else {
+                    let nextIdx = (room.turnIdx + 1) % room.players.length;
+                    while(room.players[nextIdx].hasWon) { nextIdx = (nextIdx + 1) % room.players.length; }
+                    room.turnIdx = nextIdx;
+                }
                 db.ref('rooms/' + myData.roomCode).set(room);
             });
         }
@@ -279,9 +302,7 @@
             updateUI_local();
         }
 
-        function updateUI_local() {
-            document.querySelectorAll('.card-img').forEach((el, index) => el.classList.toggle('selected', selectedCards.includes(index)));
-        }
+        function updateUI_local() { document.querySelectorAll('.card-img').forEach((el, index) => el.classList.toggle('selected', selectedCards.includes(index))); }
 
         function playSelectedCards() {
             if(selectedCards.length === 0) return;
@@ -300,36 +321,44 @@
         }
 
         function resolveRound(room) {
-            room.lastRevealed = Object.values(room.pendingPlays).flat();
+            room.lastRevealed = Object.values(room.pendingPlays).flat().filter(c => c !== null);
             room.lastFeno = JSON.parse(JSON.stringify(room.feno));
             room.lastRevealed.forEach(c => { if(c.type === 'zangado') { let d = room.feno.find(f => f.cor === c.cor); if(d) d.valor = 7 - d.valor; } });
             
             let maxV = -1; let ganhador = "";
-            room.players.forEach(p => { room.pendingPlays[p.nick].forEach(c => {
-                let v = getCardValue(c, room.feno);
-                if(v > maxV) { maxV = v; ganhador = p.nick; }
-                else if(v === maxV && ganhador !== "") { if(p.pileCount < room.players.find(pl => pl.nick === ganhador).pileCount) ganhador = p.nick; }
-            }); });
+            room.players.forEach(p => { 
+                if(room.pendingPlays[p.nick] && room.pendingPlays[p.nick].length > 0) {
+                    room.pendingPlays[p.nick].forEach(c => {
+                        let v = getCardValue(c, room.feno);
+                        if(v > maxV) { maxV = v; ganhador = p.nick; }
+                        else if(v === maxV) { if(p.pileCount < room.players.find(pl => pl.nick === ganhador).pileCount) ganhador = p.nick; }
+                    });
+                }
+            });
 
             if(ganhador === myData.nick) playSound('snd-burro');
 
             room.players.forEach(p => {
                 p.isBurrão = (p.nick === ganhador);
-                while(p.hand.length < 3) {
-                    if(!p.isBurrão && p.pileCount > 0) { p.hand.push(getRandCard()); p.pileCount--; }
-                    else { p.hand.push(getRandCard()); if(p.isBurrão) break; }
+                if(!p.hasWon) {
+                    while(p.hand.length < 3) {
+                        if(!p.isBurrão && p.pileCount > 0) { p.hand.push(getRandCard()); p.pileCount--; }
+                        else { p.hand.push(getRandCard()); if(p.isBurrão) break; }
+                    }
+                    if((p.pileCount + p.hand.length) === 0 && !p.isBurrão) p.hasWon = true;
                 }
             });
 
-            const vencedor = room.players.find(p => (p.pileCount + p.hand.length) === 0 && !p.isBurrão);
-            if(vencedor) {
-                alert("CABÔ! " + vencedor.nick.toUpperCase() + " VENCEU!");
+            const ativos = room.players.filter(p => !p.hasWon);
+            if(ativos.length <= 1) {
+                alert("CABÔ! JEGE FINAL: " + (ativos[0] ? ativos[0].nick : "NINGUÉM").toUpperCase());
                 room.status = 'waiting';
             }
 
             room.feno = []; room.diceAvailable = [...CORES]; room.phase = 'choosing_dice'; room.pendingPlays = null;
-            room.turnIdx = room.players.findIndex(p => p.isBurrão);
-            if(room.turnIdx === -1) room.turnIdx = 0;
+            let nextStartIdx = room.players.findIndex(p => p.isBurrão);
+            if(nextStartIdx === -1 || room.players[nextStartIdx].hasWon) { nextStartIdx = room.players.findIndex(p => !p.hasWon); }
+            room.turnIdx = nextStartIdx;
             db.ref('rooms/' + myData.roomCode).set(room);
         }
 
@@ -342,7 +371,7 @@
             db.ref('rooms/' + myData.roomCode).once('value', snap => {
                 let room = snap.val();
                 room.status = 'playing';
-                room.players.forEach(p => { p.pileCount = 10 - 3; p.hand = [getRandCard(), getRandCard(), getRandCard()]; });
+                room.players.forEach(p => { p.pileCount = 7; p.hand = [getRandCard(), getRandCard(), getRandCard()]; p.hasWon = false; p.isBurrão = false; });
                 db.ref('rooms/' + myData.roomCode).set(room);
             });
         }
