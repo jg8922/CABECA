@@ -22,8 +22,9 @@
         /* JOGO */
         .feno-area { background: url('feno.png') center/cover !important; padding: 15px; border-radius: 20px; display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 10px 0; border: 4px solid #5d4037; min-height: 75px; }
         .dado-feno { width: 42px; height: 42px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: bold; border: 2px solid #000; color: white; text-shadow: 1px 1px 2px #000; }
-        .reveal-area { display: flex; gap: 10px; justify-content: center; margin: 10px 0; min-height: 130px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 15px; width: 100%; overflow-x: auto; }
-        .played-card { width: 80px; height: 120px; border-radius: 8px; border: 2px solid var(--primary); background-size: cover; flex-shrink: 0; }
+        
+        .reveal-area { display: flex; gap: 10px; justify-content: center; margin: 5px 0; min-height: 110px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 15px; width: 100%; overflow-x: auto; border: 1px dashed var(--primary); }
+        .played-card { width: 70px; height: 105px; border-radius: 8px; border: 2px solid var(--primary); background-size: cover; flex-shrink: 0; position: relative; }
         
         .hand { display: flex; gap: 8px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
         .card-wrapper { position: relative; }
@@ -34,33 +35,18 @@
         .info-bar { display: flex; align-items: center; gap: 15px; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 50px; margin-bottom: 10px; }
         .pile-stack { width: 40px; height: 60px; background: url('verso.png') center/cover; border: 2px solid white; border-radius: 4px; }
         
-        /* BURRÃO NO CANTO INFERIOR ESQUERDO */
-        #burrao-visual { 
-            position: fixed; 
-            bottom: 20px; 
-            left: 20px; 
-            width: 85px; 
-            height: 120px; 
-            background: url('burrão.png') center/cover; 
-            border: 3px solid var(--danger); 
-            border-radius: 10px; 
-            display: none; 
-            z-index: 100;
-            box-shadow: 0 0 15px rgba(255,0,0,0.6);
-            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
+        #burrao-visual { position: fixed; bottom: 20px; left: 20px; width: 85px; height: 120px; background: url('burrão.png') center/cover; border: 3px solid var(--danger); border-radius: 10px; display: none; z-index: 100; box-shadow: 0 0 15px rgba(255,0,0,0.6); }
 
         #turn-banner { width: 100%; padding: 8px; border-radius: 10px; margin-bottom: 10px; font-weight: bold; color: #000; background: var(--primary); font-size: 0.8rem; }
         button { padding: 12px; font-weight: bold; cursor: pointer; border: none; border-radius: 12px; text-transform: uppercase; background: var(--primary); color: #000; width: 100%; }
-        .btn-dice-opt { font-size: 1.2rem; margin: 3px; border-radius: 5px; width: 45px; height: 45px; border: 1px solid #000; cursor: pointer; font-weight: bold; }
+        .btn-dice-opt { font-size: 1.2rem; margin: 3px; border-radius: 8px; width: 45px; height: 45px; border: 2px solid #000; cursor: pointer; font-weight: bold; color: white; text-shadow: 1px 1px 1px #000; }
         input { padding: 12px; margin: 10px 0; border-radius: 12px; border: 2px solid #444; background: #111; color: white; width: 80%; text-align: center; font-size: 1.2rem; }
         
-        @keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .last-feno-container { display: flex; gap: 5px; justify-content: center; margin-bottom: 5px; opacity: 0.7; transform: scale(0.8); }
     </style>
 </head>
 <body>
 
-    <!-- EFEITOS SONOROS (Arquivos na sua pasta local) -->
     <audio id="snd-dice" src="rodar_dados.mp3"></audio>
     <audio id="snd-card" src="pegar_carta.mp3"></audio>
     <audio id="snd-burro" src="burro.mp3"></audio>
@@ -89,7 +75,7 @@
     <div id="screen-lobby" class="screen">
         <h2>LOBBY</h2>
         <p>CÓDIGO: <b id="lobby-room-code" style="color:var(--primary); font-size: 2.5rem;">----</b></p>
-        <div id="player-list-lobby"></div>
+        <div id="player-list-lobby" style="width: 100%;"></div>
         <button id="start-btn" style="display:none" onclick="hostStart()">COMEÇAR JOGO</button>
         <button style="background:#444; color:white; margin-top:10px" onclick="location.reload()">SAIR</button>
     </div>
@@ -100,10 +86,15 @@
             <div class="pile-stack"></div>
             <div>CARTAS: <b id="ui-pile">0</b></div>
         </div>
-        <div id="reveal-label" style="font-size:0.7rem; margin-top:5px; display:none;">REVELADAS:</div>
-        <div class="reveal-area" id="reveal-area"></div>
+
+        <!-- HISTÓRICO DA RODADA ANTERIOR -->
+        <div id="history-box" style="display:none; width: 100%;">
+            <div style="font-size:0.6rem; margin-bottom:2px;">DADOS DA PARTIDA ANTERIOR:</div>
+            <div class="last-feno-container" id="last-feno-display"></div>
+            <div style="font-size:0.6rem;">CARTAS REVELADAS:</div>
+            <div class="reveal-area" id="reveal-area"></div>
+        </div>
         
-        <!-- BURRÃO NO CANTO -->
         <div id="burrao-visual"></div>
 
         <div class="feno-area" id="dados-feno"></div>
@@ -157,17 +148,17 @@
             myData = { nick, roomCode: code, isOwner: true };
             db.ref('rooms/' + code).set({
                 status: 'waiting', owner: nick, players: [{nick, hand: [], pileCount: 10, isBurrão: false}],
-                feno: [], phase: 'choosing_dice', turnIdx: 0, diceAvailable: [...CORES], lastRevealed: [], rolledOptions: []
+                feno: [], phase: 'choosing_dice', turnIdx: 0, diceAvailable: [...CORES], lastRevealed: [], rolledOptions: [], lastFeno: []
             }).then(() => listenToRoom(code));
         }
 
         function logicJoinRoom() {
             const nick = document.getElementById('join-nick').value.trim();
             const code = document.getElementById('join-code').value.trim();
-            if(!nick || code.length !== 4) return alert("Nick e Código!");
+            if(!nick || code.length !== 4) return alert("Preencha tudo!");
             db.ref('rooms/' + code).once('value', snap => {
                 const room = snap.val();
-                if(!room) return alert("Não encontrada!");
+                if(!room) return alert("Sala não encontrada!");
                 let players = room.players || [];
                 players.push({nick, hand: [], pileCount: 10, isBurrão: false});
                 db.ref('rooms/' + code + '/players').set(players).then(() => {
@@ -207,22 +198,26 @@
         function updateUI(room) {
             if(room.status === 'waiting') {
                 document.getElementById('player-list-lobby').innerHTML = room.players.map(p => `
-                    <div class="player-entry">
-                        <span>• ${p.nick} ${p.nick === room.owner ? '(DONO)' : ''}</span>
-                        ${myData.isOwner && p.nick !== myData.nick ? `<button class="btn-kick" onclick="kickPlayer('${p.nick}')">EXPULSAR</button>` : ''}
-                    </div>`).join('');
+                <div class="player-entry"><span>• ${p.nick}</span> 
+                ${myData.isOwner && p.nick !== myData.nick ? `<button class="btn-kick" onclick="kickPlayer('${p.nick}')">KICK</button>` : ''}</div>`).join('');
             } 
             if(room.status === 'playing') {
                 if(!document.getElementById('screen-game').classList.contains('active')) goTo('screen-game');
                 const me = room.players.find(p => p.nick === myData.nick);
                 const isMyTurn = room.players[room.turnIdx].nick === myData.nick;
 
-                document.getElementById('ui-pile').innerText = me.pileCount;
+                document.getElementById('ui-pile').innerText = (me.pileCount + me.hand.length);
                 document.getElementById('burrao-visual').style.display = me.isBurrão ? 'block' : 'none';
 
+                // HISTÓRICO DA RODADA ANTERIOR (Dados e Cartas)
                 if (room.lastRevealed && room.lastRevealed.length > 0) {
-                    document.getElementById('reveal-label').style.display = 'block';
-                    document.getElementById('reveal-area').innerHTML = room.lastRevealed.map(c => `<div class="played-card" style="background-image: url('${c.img}')"></div>`).join('');
+                    document.getElementById('history-box').style.display = 'block';
+                    document.getElementById('last-feno-display').innerHTML = (room.lastFeno || []).map(d => 
+                        `<div class="dado-feno" style="width:25px; height:25px; font-size:0.8rem; background:${CORES_HEX[d.cor]}">${d.valor}</div>`).join('');
+                    document.getElementById('reveal-area').innerHTML = room.lastRevealed.map(c => `
+                        <div class="played-card" style="background-image: url('${c.img}')">
+                            <div class="card-value-badge" style="width:20px; height:20px; font-size:0.6rem; top:-5px; right:-5px;">${getCardValue(c, room.lastFeno)}</div>
+                        </div>`).join('');
                 }
 
                 document.getElementById('dados-feno').innerHTML = (room.feno || []).map(d => `<div class="dado-feno" style="background:${CORES_HEX[d.cor]}">${d.valor}</div>`).join('');
@@ -242,7 +237,7 @@
                         else { renderDiceSelection(room); }
                     } else { document.getElementById('area-dice-selection').style.display = 'none'; }
                 } else {
-                    document.getElementById('turn-banner').innerText = "FASE DE CARTAS (1-3)";
+                    document.getElementById('turn-banner').innerText = "JOGUE DE 1 A 3 CARTAS";
                     document.getElementById('area-dice-selection').style.display = 'none';
                     document.getElementById('btn-confirm').style.display = 'block';
                 }
@@ -250,17 +245,15 @@
         }
 
         function autoRollDice(room) {
+            // Dados agora podem repetir valores
             const options = room.diceAvailable.map(cor => ({ cor, valor: Math.floor(Math.random() * 6) + 1 }));
             db.ref('rooms/' + myData.roomCode + '/rolledOptions').set(options);
         }
 
         function renderDiceSelection(room) {
             const container = document.getElementById('dice-pool');
-            const fenoVals = (room.feno || []).map(f => f.valor);
-            container.innerHTML = room.rolledOptions.map((d, i) => {
-                const pode = !fenoVals.includes(d.valor) || room.rolledOptions.every(rd => fenoVals.includes(rd.valor));
-                return `<button class="btn-dice-opt" style="background:${CORES_HEX[d.cor]}; opacity:${pode?1:0.3}" ${pode ? `onclick="selectDice(${i})"` : 'disabled'}>${d.valor}</button>`;
-            }).join('');
+            container.innerHTML = room.rolledOptions.map((d, i) => 
+                `<button class="btn-dice-opt" style="background:${CORES_HEX[d.cor]}" onclick="selectDice(${i})">${d.valor}</button>`).join('');
         }
 
         function selectDice(idx) {
@@ -308,6 +301,7 @@
 
         function resolveRound(room) {
             room.lastRevealed = Object.values(room.pendingPlays).flat();
+            room.lastFeno = JSON.parse(JSON.stringify(room.feno));
             room.lastRevealed.forEach(c => { if(c.type === 'zangado') { let d = room.feno.find(f => f.cor === c.cor); if(d) d.valor = 7 - d.valor; } });
             
             let maxV = -1; let ganhador = "";
@@ -317,7 +311,6 @@
                 else if(v === maxV && ganhador !== "") { if(p.pileCount < room.players.find(pl => pl.nick === ganhador).pileCount) ganhador = p.nick; }
             }); });
 
-            // SOM DO BURRO APENAS PARA QUEM PERDEU
             if(ganhador === myData.nick) playSound('snd-burro');
 
             room.players.forEach(p => {
@@ -327,6 +320,13 @@
                     else { p.hand.push(getRandCard()); if(p.isBurrão) break; }
                 }
             });
+
+            const vencedor = room.players.find(p => (p.pileCount + p.hand.length) === 0 && !p.isBurrão);
+            if(vencedor) {
+                alert("CABÔ! " + vencedor.nick.toUpperCase() + " VENCEU!");
+                room.status = 'waiting';
+            }
+
             room.feno = []; room.diceAvailable = [...CORES]; room.phase = 'choosing_dice'; room.pendingPlays = null;
             room.turnIdx = room.players.findIndex(p => p.isBurrão);
             if(room.turnIdx === -1) room.turnIdx = 0;
